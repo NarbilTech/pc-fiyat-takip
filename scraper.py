@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Akakce Fiyat Scraper
+Akakce Fiyat Scraper v2
 Her gun otomatik calisir, urunlerin en dusuk fiyatini ceker.
 """
 
@@ -79,7 +79,7 @@ URUNLER = {
     "mb16": "MSI B460M Pro-VDH",
     "mb17": "Gigabyte B560M DS3H",
     "mb18": "MSI MAG Z590 Tomahawk",
-    "mb19": "ASRock H610M-HDV/M.2",
+    "mb19": "ASRock H610M-HDV",
     "mb20": "Gigabyte B760M DS3H",
     "mb21": "ASRock B760M Pro RS",
     "mb22": "MSI PRO Z790-A WiFi",
@@ -221,77 +221,144 @@ URUNLER = {
     "hs7": "Corsair Virtuoso Max",
 }
 
-def fiyat_cek(urun_adi, scraper):
+
+def fiyat_cek(urun_adi, scraper, debug_save=False, debug_name=''):
     """Akakce'de urun ara ve en dusuk fiyati dondur."""
     url = f"https://www.akakce.com/arama/?q={quote(urun_adi)}"
-    
+
     try:
         r = scraper.get(url, timeout=30)
+        
+        print(f"  HTTP {r.status_code}, {len(r.text)} bytes", end="")
+        
         if r.status_code != 200:
+            print()
             return None
-        
+
         html = r.text
-        
-        # Fiyat pattern'leri (Akakce'nin cesitli HTML yapilari)
-        patterns = [
-            r'class="pt_v8">([\d.]+),(\d+)\s*TL',
-            r'class="pt_v9">([\d.]+),(\d+)\s*TL',
-            r'<span class="pt[^"]*">([\d.]+),(\d+)',
-            r'"price":\s*"?([\d.]+)"?',
-        ]
-        
+
+        # DEBUG: ilk urun icin HTML'i kaydet
+        if debug_save:
+            try:
+                with open(f'debug_{debug_name}.html', 'w', encoding='utf-8') as f:
+                    f.write(html)
+                print(f" [debug kaydedildi]", end="")
+            except Exception as e:
+                print(f" [debug hatasi: {e}]", end="")
+
         fiyatlar = []
-        for p in patterns:
-            for m in re.finditer(p, html):
-                try:
-                    tam = m.group(1).replace('.', '')
-                    kurus = m.group(2) if len(m.groups()) > 1 else '0'
-                    fiyatlar.append(float(f"{tam}.{kurus}"))
-                except:
-                    continue
-        
-        if fiyatlar:
-            # En dusuk fiyati dondur (en az 500 TL olsun - anlamsiz sayilari filtrele)
-            gecerli = [f for f in fiyatlar if 100 < f < 500000]
-            if gecerli:
-                return min(gecerli)
-        
-        return None
-    
-    except Exception as e:
-        print(f"  Hata: {e}")
+
+        # ---- PATTERN 1: JSON-LD icinde price ----
+        for m in re.finditer(r'"price"\s*:\s*"?([\d]+(?:[.,][\d]+)?)"?', html):
+            try:
+                val = m.group(1).replace(',', '.')
+                f = float(val)
+                if f > 100:
+                    fiyatlar.append(f)
+            except:
+                pass
+
+        # ---- PATTERN 2: Akakce span formati (pt_v8, pt_v9, pb_v8 gibi) ----
+        for m in re.finditer(r'class="p[tb]_[^"]*"[^>]*>\s*([\d.]+),(\d+)', html):
+            try:
+                tam = m.group(1).replace('.', '')
+                kurus = m.group(2)
+                fiyatlar.append(float(f"{tam}.{kurus}"))
+            except:
+                pass
+
+        # ---- PATTERN 3: Genel TL formati (TR) ----
+        for m in re.finditer(r'>\s*([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|tl|₺)', html):
+            try:
+                tam = m.group(1).replace('.', '')
+                kurus = m.group(2)
+                fiyatlar.append(float(f"{tam}.{kurus}"))
+            except:
+                pass
+
+        # ---- PATTERN 4: Genel TL formati (basit) ----
+        for m in re.finditer(r'>\s*([\d.]+)\s*TL<', html):
+            try:
+                fiyatlar.append(float(m.group(1).replace('.', '')))
+            except:
+                pass
+
+        # ---- PATTERN 5: data-price ----
+        for m in re.finditer(r'data-price="([\d.]+)"', html):
+            try:
+                fiyatlar.append(float(m.group(1)))
+            except:
+                pass
+
+        # ---- PATTERN 6: Metin icinde "X.XXX,XX TL" ----
+        for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*TL', html):
+            try:
+                tam = m.group(1).replace('.', '')
+                kurus = m.group(2)
+                fiyatlar.append(float(f"{tam}.{kurus}"))
+            except:
+                pass
+
+        # Anlamli fiyatlari filtrele (100 - 500000 arasi)
+        gecerli = [f for f in fiyatlar if 100 < f < 500000]
+
+        print(f" [{len(gecerli)} fiyat bulundu]", end="")
+
+        if gecerli:
+            return min(gecerli)
+
         return None
 
+    except Exception as e:
+        print(f"  EXC: {e}", end="")
+        return None
+
+
 def main():
-    print(f"=== Akakce Fiyat Scraper ===")
+    print(f"=== Akakce Fiyat Scraper v2 ===")
     print(f"Baslangic: {datetime.utcnow().isoformat()}")
     print(f"Toplam urun: {len(URUNLER)}")
-    
+    print()
+
     # cloudscraper ile Cloudflare bypass
-    scraper = cloudscraper.create_scraper(
-        browser={'browser': 'chrome', 'platform': 'windows', 'mobile': False}
-    )
-    
+    try:
+        scraper = cloudscraper.create_scraper(
+            browser={
+                'browser': 'chrome',
+                'platform': 'windows',
+                'desktop': True,
+                'mobile': False
+            },
+            delay=10
+        )
+    except:
+        scraper = cloudscraper.create_scraper()
+
     sonuclar = {}
     basarili = 0
     basarisiz = 0
-    
-    for i, (urun_id, urun_adi) in enumerate(URUNLER.items(), 1):
-        print(f"[{i}/{len(URUNLER)}] {urun_adi}...", end=" ", flush=True)
-        
-        fiyat = fiyat_cek(urun_adi, scraper)
-        
+
+    urun_listesi = list(URUNLER.items())
+
+    for i, (urun_id, urun_adi) in enumerate(urun_listesi, 1):
+        print(f"[{i}/{len(urun_listesi)}] {urun_adi}...", end=" ", flush=True)
+
+        # Ilk 3 urun icin HTML kaydet (debug)
+        debug = (i <= 3)
+
+        fiyat = fiyat_cek(urun_adi, scraper, debug_save=debug, debug_name=urun_id)
+
         if fiyat:
             sonuclar[urun_id] = round(fiyat, 2)
-            print(f"{fiyat:.2f} TL")
+            print(f" => {fiyat:.2f} TL")
             basarili += 1
         else:
-            print("BULUNAMADI")
+            print(" => BULUNAMADI")
             basarisiz += 1
-        
-        # Rate limit - her istek arasi 2-4 saniye
+
+        # Rate limit
         time.sleep(random.uniform(2, 4))
-    
+
     # Sonuclari kaydet
     cikti = {
         "guncelleme": datetime.utcnow().isoformat() + "Z",
@@ -300,13 +367,15 @@ def main():
         "basarisiz": basarisiz,
         "fiyatlar": sonuclar
     }
-    
+
     with open("prices.json", "w", encoding="utf-8") as f:
         json.dump(cikti, f, ensure_ascii=False, indent=2)
-    
-    print(f"\n=== TAMAMLANDI ===")
+
+    print()
+    print(f"=== TAMAMLANDI ===")
     print(f"Basarili: {basarili}/{len(URUNLER)}")
     print(f"Cikti: prices.json")
+
 
 if __name__ == "__main__":
     main()
