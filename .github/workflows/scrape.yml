@@ -2,9 +2,8 @@ name: Akakce Fiyat Guncelle
 
 on:
   schedule:
-    # Her gun saat 06:00 UTC (Turkiye 09:00)
     - cron: '0 6 * * *'
-  workflow_dispatch: # Manuel tetikleme icin
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -37,5 +36,6 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add prices.json
+          git add debug_*.html || true
           git diff --staged --quiet || git commit -m "Fiyatlar guncellendi: $(date -u '+%Y-%m-%d %H:%M')"
-          git push
+          git push || true
