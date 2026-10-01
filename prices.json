@@ -1,7 +1,21 @@
 {
-  "guncelleme": "2026-10-01T00:02:14.464534Z",
-  "toplam": 184,
-  "basarili": 0,
-  "basarisiz": 184,
-  "fiyatlar": {}
+  "guncelleme": "2026-10-01T00:08:11.599023Z",
+  "mod": "TESHIS",
+  "testler": {
+    "test1": {
+      "urun": "AMD Ryzen 5 5600",
+      "title": "Attention Required! | Cloudflare",
+      "html_size": 4265
+    },
+    "test2": {
+      "urun": "NVIDIA RTX 4060",
+      "title": "Attention Required! | Cloudflare",
+      "html_size": 4265
+    },
+    "test3": {
+      "urun": "Samsung 980 PRO 1TB",
+      "title": "Attention Required! | Cloudflare",
+      "html_size": 4265
+    }
+  }
 }
