@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Trendyol Fiyat Scraper - GitHub Actions icin"""
+"""Akakce Fiyat Scraper - Jina AI Reader uzerinden"""
 
 import json
 import re
@@ -8,7 +8,6 @@ import time
 import random
 from datetime import datetime
 from urllib.parse import quote
-
 import requests
 
 URUNLER = {
@@ -39,7 +38,7 @@ URUNLER = {
     "ram9": "G.Skill Trident Z5 32GB DDR5 6000", "ram10": "TeamGroup T-Force 32GB DDR5 6400",
     "ram11": "G.Skill Trident Z5 64GB DDR5 6000", "ram12": "Corsair Dominator 128GB DDR5 5600",
     "gpu1": "NVIDIA GeForce GTX 750 Ti", "gpu2": "NVIDIA GeForce GTX 1050 Ti",
-    "gpu3": "NVIDIA GeForce GTX 1060 6GB", "gpu4": "NVIDIA GeForce GTX 1070",
+    "gpu3": "NVIDIA GeForce GTX 1060", "gpu4": "NVIDIA GeForce GTX 1070",
     "gpu5": "NVIDIA GeForce GTX 1080", "gpu6": "NVIDIA GeForce GTX 1650",
     "gpu7": "NVIDIA GeForce GTX 1660 Super", "gpu8": "NVIDIA GeForce RTX 2060",
     "gpu9": "NVIDIA GeForce RTX 2060 Super", "gpu10": "NVIDIA GeForce RTX 2070 Super",
@@ -86,56 +85,39 @@ URUNLER = {
     "hs6": "Logitech G Pro X 2", "hs7": "Corsair Virtuoso Max",
 }
 
-HEADERS = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'tr-TR,tr;q=0.9,en;q=0.8',
-    'Accept-Encoding': 'gzip, deflate, br',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1',
-}
-
 
 def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
-    """Trendyol'da ara ve en dusuk fiyati dondur."""
-    url = f"https://www.trendyol.com/sr?q={quote(urun_adi)}"
+    """Jina AI Reader uzerinden Akakce'den fiyat cek."""
+    akakce_url = f"https://www.akakce.com/arama/?q={quote(urun_adi)}"
+    jina_url = f"https://r.jina.ai/{akakce_url}"
 
     try:
-        r = session.get(url, timeout=30)
+        r = session.get(jina_url, timeout=40)
         print(f"  HTTP {r.status_code}, {len(r.text)} bytes", end="")
 
         if r.status_code != 200:
             print()
             return None
 
-        html = r.text
+        text = r.text
 
         if debug:
             with open(f'debug_{debug_name}.html', 'w', encoding='utf-8') as f:
-                f.write(html)
+                f.write(text[:20000])
 
+        # Jina markdown formatinda fiyat: "1.234,56 TL" veya "1234,56 TL"
         fiyatlar = []
-
-        # Trendyol fiyat formati: "1.234,56 TL" veya "1234.56"
-        # 1. JSON-LD veya state icinde
-        for m in re.finditer(r'"price"\s*:\s*"?([\d]+(?:\.\d+)?)"?', html):
-            try:
-                f = float(m.group(1))
-                if 100 < f < 500000:
-                    fiyatlar.append(f)
-            except:
-                pass
-
-        # 2. TR formati "X.XXX,XX TL"
-        for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|₺)', html):
+        for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|₺)', text):
             try:
                 tam = m.group(1).replace('.', '')
-                fiyatlar.append(float(f"{tam}.{m.group(2)}"))
+                f = float(f"{tam}.{m.group(2)}")
+                if 100 < f < 500000:
+                    fiyatlar.append(f)
             except:
                 pass
 
-        # 3. "1234.56 TL" formati
-        for m in re.finditer(r'([\d]+\.\d{2})\s*TL', html):
+        # Alternatif: "1234.56 TL"
+        for m in re.finditer(r'([\d]+\.\d{2})\s*(?:TL|₺)', text):
             try:
                 f = float(m.group(1))
                 if 100 < f < 500000:
@@ -143,13 +125,19 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
             except:
                 pass
 
-        gecerli = [f for f in fiyatlar if 100 < f < 500000]
+        # Alternatif: tam sayi "1234 TL"
+        for m in re.finditer(r'\b([\d]{3,6})\s*(?:TL|₺)', text):
+            try:
+                f = float(m.group(1))
+                if 100 < f < 500000:
+                    fiyatlar.append(f)
+            except:
+                pass
 
-        print(f" [{len(gecerli)} fiyat]", end="")
+        print(f" [{len(fiyatlar)} fiyat]", end="")
 
-        if gecerli:
-            return min(gecerli)
-
+        if fiyatlar:
+            return min(fiyatlar)
         return None
 
     except Exception as e:
@@ -158,20 +146,16 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
 
 
 def main():
-    print(f"=== Trendyol Fiyat Scraper ===")
+    print(f"=== Akakce Fiyat Scraper (Jina AI) ===")
     print(f"Baslangic: {datetime.utcnow().isoformat()}")
     print(f"Toplam urun: {len(URUNLER)}")
     print()
 
     session = requests.Session()
-    session.headers.update(HEADERS)
-
-    # Ana sayfaya bir kez git (cookie al)
-    try:
-        session.get('https://www.trendyol.com/', timeout=20)
-        print("Ana sayfa ziyaret edildi (cookie alindi)")
-    except Exception as e:
-        print(f"Ana sayfa hatasi: {e}")
+    session.headers.update({
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
+        'Accept': 'text/plain,text/markdown,*/*',
+    })
 
     sonuclar = {}
     basarili = 0
@@ -193,11 +177,16 @@ def main():
             print(" => BULUNAMADI")
             basarisiz += 1
 
-        time.sleep(random.uniform(1, 2))
+        time.sleep(random.uniform(1.5, 3))
+
+        # Jina rate limit - her 20 urunde mola
+        if i % 20 == 0:
+            print("  (mola 10 sn...)")
+            time.sleep(10)
 
     cikti = {
         "guncelleme": datetime.utcnow().isoformat() + "Z",
-        "kaynak": "trendyol",
+        "kaynak": "akakce-via-jina",
         "toplam": len(URUNLER),
         "basarili": basarili,
         "basarisiz": basarisiz,
