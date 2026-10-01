@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Akakce Fiyat Scraper - Jina AI Reader uzerinden"""
+"""Akakce Fiyat Scraper - allorigins proxy uzerinden"""
 
 import json
 import re
@@ -38,7 +38,7 @@ URUNLER = {
     "ram9": "G.Skill Trident Z5 32GB DDR5 6000", "ram10": "TeamGroup T-Force 32GB DDR5 6400",
     "ram11": "G.Skill Trident Z5 64GB DDR5 6000", "ram12": "Corsair Dominator 128GB DDR5 5600",
     "gpu1": "NVIDIA GeForce GTX 750 Ti", "gpu2": "NVIDIA GeForce GTX 1050 Ti",
-    "gpu3": "NVIDIA GeForce GTX 1060", "gpu4": "NVIDIA GeForce GTX 1070",
+    "gpu3": "NVIDIA GeForce GTX 1060 6GB", "gpu4": "NVIDIA GeForce GTX 1070",
     "gpu5": "NVIDIA GeForce GTX 1080", "gpu6": "NVIDIA GeForce GTX 1650",
     "gpu7": "NVIDIA GeForce GTX 1660 Super", "gpu8": "NVIDIA GeForce RTX 2060",
     "gpu9": "NVIDIA GeForce RTX 2060 Super", "gpu10": "NVIDIA GeForce RTX 2070 Super",
@@ -87,57 +87,57 @@ URUNLER = {
 
 
 def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
-    """Jina AI Reader uzerinden Akakce'den fiyat cek."""
+    """allorigins proxy uzerinden Akakce'den fiyat cek."""
     akakce_url = f"https://www.akakce.com/arama/?q={quote(urun_adi)}"
-    jina_url = f"https://r.jina.ai/{akakce_url}"
+    proxy_url = f"https://api.allorigins.win/raw?url={quote(akakce_url, safe='')}"
 
     try:
-        r = session.get(jina_url, timeout=40)
+        r = session.get(proxy_url, timeout=45)
         print(f"  HTTP {r.status_code}, {len(r.text)} bytes", end="")
 
         if r.status_code != 200:
             print()
             return None
 
-        text = r.text
+        html = r.text
 
         if debug:
             with open(f'debug_{debug_name}.html', 'w', encoding='utf-8') as f:
-                f.write(text[:20000])
+                f.write(html[:30000])
 
-        # Jina markdown formatinda fiyat: "1.234,56 TL" veya "1234,56 TL"
         fiyatlar = []
-        for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|₺)', text):
+
+        # Akakce pt_v8 pattern
+        for m in re.finditer(r'class="p[tb]_[^"]*"[^>]*>\s*([\d.]+),(\d+)', html):
             try:
                 tam = m.group(1).replace('.', '')
-                f = float(f"{tam}.{m.group(2)}")
-                if 100 < f < 500000:
-                    fiyatlar.append(f)
+                fiyatlar.append(float(f"{tam}.{m.group(2)}"))
             except:
                 pass
 
-        # Alternatif: "1234.56 TL"
-        for m in re.finditer(r'([\d]+\.\d{2})\s*(?:TL|₺)', text):
+        # JSON-LD price
+        for m in re.finditer(r'"price"\s*:\s*"?([\d]+(?:[.,]\d+)?)"?', html):
             try:
-                f = float(m.group(1))
+                val = m.group(1).replace(',', '.')
+                f = float(val)
                 if 100 < f < 500000:
                     fiyatlar.append(f)
             except:
                 pass
 
-        # Alternatif: tam sayi "1234 TL"
-        for m in re.finditer(r'\b([\d]{3,6})\s*(?:TL|₺)', text):
+        # Genel TR format "X.XXX,XX TL"
+        for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|₺)', html):
             try:
-                f = float(m.group(1))
-                if 100 < f < 500000:
-                    fiyatlar.append(f)
+                tam = m.group(1).replace('.', '')
+                fiyatlar.append(float(f"{tam}.{m.group(2)}"))
             except:
                 pass
 
-        print(f" [{len(fiyatlar)} fiyat]", end="")
+        gecerli = [f for f in fiyatlar if 100 < f < 500000]
+        print(f" [{len(gecerli)} fiyat]", end="")
 
-        if fiyatlar:
-            return min(fiyatlar)
+        if gecerli:
+            return min(gecerli)
         return None
 
     except Exception as e:
@@ -146,7 +146,7 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
 
 
 def main():
-    print(f"=== Akakce Fiyat Scraper (Jina AI) ===")
+    print(f"=== Akakce Fiyat Scraper (allorigins) ===")
     print(f"Baslangic: {datetime.utcnow().isoformat()}")
     print(f"Toplam urun: {len(URUNLER)}")
     print()
@@ -154,7 +154,7 @@ def main():
     session = requests.Session()
     session.headers.update({
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-        'Accept': 'text/plain,text/markdown,*/*',
+        'Accept': 'text/html,application/xhtml+xml,*/*',
     })
 
     sonuclar = {}
@@ -177,16 +177,15 @@ def main():
             print(" => BULUNAMADI")
             basarisiz += 1
 
-        time.sleep(random.uniform(1.5, 3))
+        time.sleep(random.uniform(1.5, 2.5))
 
-        # Jina rate limit - her 20 urunde mola
         if i % 20 == 0:
-            print("  (mola 10 sn...)")
-            time.sleep(10)
+            print("  (mola 5 sn...)")
+            time.sleep(5)
 
     cikti = {
         "guncelleme": datetime.utcnow().isoformat() + "Z",
-        "kaynak": "akakce-via-jina",
+        "kaynak": "akakce-via-allorigins",
         "toplam": len(URUNLER),
         "basarili": basarili,
         "basarisiz": basarisiz,
