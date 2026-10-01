@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Akakce Fiyat Scraper - allorigins proxy uzerinden"""
+"""Akakce Fiyat Scraper - ScraperAPI uzerinden"""
 
+import os
 import json
 import re
 import time
@@ -9,6 +10,11 @@ import random
 from datetime import datetime
 from urllib.parse import quote
 import requests
+
+API_KEY = os.environ.get('SCRAPER_API_KEY', '')
+if not API_KEY:
+    print("HATA: SCRAPER_API_KEY environment variable eksik")
+    exit(1)
 
 URUNLER = {
     "cpu1": "AMD Ryzen 3 1200", "cpu2": "AMD Ryzen 5 1600", "cpu3": "AMD Ryzen 5 2600",
@@ -86,25 +92,18 @@ URUNLER = {
 }
 
 
-def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
-    """allorigins proxy uzerinden Akakce'den fiyat cek."""
+def fiyat_cek(urun_adi):
+    """ScraperAPI uzerinden Akakce'den fiyat cek."""
     akakce_url = f"https://www.akakce.com/arama/?q={quote(urun_adi)}"
-    proxy_url = f"https://api.allorigins.win/raw?url={quote(akakce_url, safe='')}"
+    scraper_url = f"http://api.scraperapi.com?api_key={API_KEY}&url={quote(akakce_url, safe='')}&country_code=tr"
 
     try:
-        r = session.get(proxy_url, timeout=45)
-        print(f"  HTTP {r.status_code}, {len(r.text)} bytes", end="")
-
+        r = requests.get(scraper_url, timeout=60)
         if r.status_code != 200:
-            print()
+            print(f"  HTTP {r.status_code}", end="")
             return None
 
         html = r.text
-
-        if debug:
-            with open(f'debug_{debug_name}.html', 'w', encoding='utf-8') as f:
-                f.write(html[:30000])
-
         fiyatlar = []
 
         # Akakce pt_v8 pattern
@@ -116,16 +115,15 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
                 pass
 
         # JSON-LD price
-        for m in re.finditer(r'"price"\s*:\s*"?([\d]+(?:[.,]\d+)?)"?', html):
+        for m in re.finditer(r'"price"\s*:\s*"?([\d]+(?:\.\d+)?)"?', html):
             try:
-                val = m.group(1).replace(',', '.')
-                f = float(val)
+                f = float(m.group(1))
                 if 100 < f < 500000:
                     fiyatlar.append(f)
             except:
                 pass
 
-        # Genel TR format "X.XXX,XX TL"
+        # Genel TR "X.XXX,XX TL"
         for m in re.finditer(r'([\d]{1,3}(?:\.[\d]{3})*),(\d{2})\s*(?:TL|₺)', html):
             try:
                 tam = m.group(1).replace('.', '')
@@ -134,11 +132,7 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
                 pass
 
         gecerli = [f for f in fiyatlar if 100 < f < 500000]
-        print(f" [{len(gecerli)} fiyat]", end="")
-
-        if gecerli:
-            return min(gecerli)
-        return None
+        return min(gecerli) if gecerli else None
 
     except Exception as e:
         print(f"  EXC: {str(e)[:60]}", end="")
@@ -146,46 +140,34 @@ def fiyat_cek(urun_adi, session, debug=False, debug_name=''):
 
 
 def main():
-    print(f"=== Akakce Fiyat Scraper (allorigins) ===")
+    print(f"=== Akakce Scraper (ScraperAPI) ===")
     print(f"Baslangic: {datetime.utcnow().isoformat()}")
     print(f"Toplam urun: {len(URUNLER)}")
-    print()
-
-    session = requests.Session()
-    session.headers.update({
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0',
-        'Accept': 'text/html,application/xhtml+xml,*/*',
-    })
 
     sonuclar = {}
     basarili = 0
     basarisiz = 0
+    kalan_kota = "?"
 
-    urun_listesi = list(URUNLER.items())
+    for i, (urun_id, urun_adi) in enumerate(URUNLER.items(), 1):
+        print(f"[{i}/{len(URUNLER)}] {urun_adi}...", end=" ", flush=True)
 
-    for i, (urun_id, urun_adi) in enumerate(urun_listesi, 1):
-        print(f"[{i}/{len(urun_listesi)}] {urun_adi}...", end=" ", flush=True)
-
-        debug = (i <= 2)
-        fiyat = fiyat_cek(urun_adi, session, debug=debug, debug_name=urun_id)
+        fiyat = fiyat_cek(urun_adi)
 
         if fiyat:
             sonuclar[urun_id] = round(fiyat, 2)
-            print(f" => {fiyat:.2f} TL")
+            print(f"=> {fiyat:.2f} TL")
             basarili += 1
         else:
-            print(" => BULUNAMADI")
+            print("=> BULUNAMADI")
             basarisiz += 1
 
-        time.sleep(random.uniform(1.5, 2.5))
-
-        if i % 20 == 0:
-            print("  (mola 5 sn...)")
-            time.sleep(5)
+        # Rate limit - ScraperAPI 5 concurrent ama biz yavas gidelim
+        time.sleep(random.uniform(1, 2))
 
     cikti = {
         "guncelleme": datetime.utcnow().isoformat() + "Z",
-        "kaynak": "akakce-via-allorigins",
+        "kaynak": "akakce-via-scraperapi",
         "toplam": len(URUNLER),
         "basarili": basarili,
         "basarisiz": basarisiz,
