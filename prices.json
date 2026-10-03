@@ -1,11 +1,10 @@
 {
-  "guncelleme": "2026-10-02T11:51:34.432222Z",
+  "guncelleme": "2026-10-03T11:03:14.930523Z",
   "kaynak": "akakce-via-scraperapi",
   "toplam": 184,
-  "basarili": 2,
-  "basarisiz": 182,
+  "basarili": 1,
+  "basarisiz": 183,
   "fiyatlar": {
-    "mb12": 357.5,
-    "cs6": 200.83
+    "mb12": 354.9
   }
 }
